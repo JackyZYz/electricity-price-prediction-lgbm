@@ -29,6 +29,33 @@ class LGBMTrainer:
         self.model = None
         self.feature_names = None
 
+    def _compute_weights(self, y: np.ndarray, method: str = "none", spike_sigma: float = 2.0,
+                         high_price_percentile: float = 80.0) -> np.ndarray:
+        """根据目标值计算样本权重，用于提升高价/尖峰拟合。"""
+        if method == "none" or method is None:
+            return np.ones_like(y, dtype=float)
+        if method == "price_level":
+            threshold = np.percentile(y, high_price_percentile)
+            weights = np.where(y >= threshold, 2.0, 1.0)
+            return weights
+        if method == "spike":
+            threshold = np.mean(y) + spike_sigma * np.std(y)
+            weights = np.where(y >= threshold, 3.0, 1.0)
+            return weights
+        if method == "quantile":
+            # 按电价分位数连续加权，高价样本权重更大
+            ranks = np.argsort(np.argsort(y))
+            quantiles = (ranks + 1) / len(y)
+            weights = 1.0 + 2.0 * quantiles
+            return weights
+        if method == "combined":
+            spike_threshold = np.mean(y) + spike_sigma * np.std(y)
+            level_threshold = np.percentile(y, high_price_percentile)
+            weights = np.where(y >= spike_threshold, 4.0,
+                               np.where(y >= level_threshold, 2.0, 1.0))
+            return weights
+        return np.ones_like(y, dtype=float)
+
     def train(
         self,
         X_train: np.ndarray,
@@ -38,9 +65,17 @@ class LGBMTrainer:
         feature_names: list,
         early_stopping_rounds: int = 50,
         num_boost_round: int = 5000,
+        weight_method: str = "none",
+        weight_spike_sigma: float = 2.0,
+        weight_high_price_percentile: float = 80.0,
     ) -> dict:
         self.feature_names = feature_names
-        train_data = lgb.Dataset(X_train, label=y_train, feature_name=feature_names)
+        train_weights = self._compute_weights(
+            y_train, method=weight_method,
+            spike_sigma=weight_spike_sigma,
+            high_price_percentile=weight_high_price_percentile
+        )
+        train_data = lgb.Dataset(X_train, label=y_train, weight=train_weights, feature_name=feature_names)
         valid_data = lgb.Dataset(X_valid, label=y_valid, feature_name=feature_names, reference=train_data)
 
         callbacks = [

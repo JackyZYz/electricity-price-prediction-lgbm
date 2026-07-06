@@ -102,6 +102,37 @@ class ReportGenerator:
         plt.close(fig)
         return str(save_path)
 
+    def plot_daily(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        timestamps: np.ndarray,
+        save_path: str,
+        date: str,
+    ) -> None:
+        """每日预测 vs 实际对比图（使用英文标签避免中文字体缺失警告）。"""
+        fig, axes = plt.subplots(2, 1, figsize=(14, 8))
+        ts = pd.to_datetime(timestamps)
+        axes[0].plot(ts, y_true, label="Actual", linewidth=1.5)
+        axes[0].plot(ts, y_pred, label="Predicted", linewidth=1.5, alpha=0.8)
+        axes[0].set_title(f"{date} Prediction vs Actual")
+        axes[0].set_xlabel("Time")
+        axes[0].set_ylabel("Price")
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        axes[1].plot(ts, y_true - y_pred, color="gray", linewidth=1)
+        axes[1].axhline(0, color="red", linestyle="--")
+        axes[1].set_title("Residual (Actual - Predicted)")
+        axes[1].set_xlabel("Time")
+        axes[1].set_ylabel("Residual")
+        axes[1].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150)
+        plt.close(fig)
+
     def plot_prediction_vs_actual(
         self,
         y_true: np.ndarray,

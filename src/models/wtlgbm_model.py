@@ -25,6 +25,9 @@ class WTLGBMModel(BaseModel):
         self.lgbm_params = config.get("lgbm_params", {})
         self.early_stopping_rounds = config.get("early_stopping_rounds", 50)
         self.num_boost_round = config.get("num_boost_round", 2000)
+        self.weight_method = config.get("weight_method", "none")
+        self.weight_spike_sigma = config.get("weight_spike_sigma", 2.0)
+        self.weight_high_price_percentile = config.get("weight_high_price_percentile", 80.0)
         self.trainers: dict[str, LGBMTrainer] = {}
         self.feature_names: Optional[list] = None
 
@@ -56,6 +59,9 @@ class WTLGBMModel(BaseModel):
                 feature_names=self.feature_names,
                 early_stopping_rounds=self.early_stopping_rounds,
                 num_boost_round=self.num_boost_round,
+                weight_method=self.weight_method,
+                weight_spike_sigma=self.weight_spike_sigma,
+                weight_high_price_percentile=self.weight_high_price_percentile,
             )
             self.trainers[key] = trainer
         return results

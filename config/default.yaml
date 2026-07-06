@@ -76,6 +76,12 @@ model:
     lambda_l1: 0.01
     lambda_l2: 0.01
 
+  # 样本加权策略：none | price_level | spike | quantile | combined
+  # 用于提升高价/尖峰时段的拟合能力
+  weight_method: "combined"
+  weight_spike_sigma: 2.0
+  weight_high_price_percentile: 80.0
+
 # --- 超参数优化配置 ---
 optuna:
   enabled: false

@@ -1,4 +1,5 @@
 """每日自动运行器。"""
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -9,9 +10,11 @@ import yaml
 from src.data.reader import DatasetCSVReader
 from src.evaluation.metrics import MetricsCalculator
 from src.evaluation.monitor import ModelMonitor
+from src.evaluation.report import ReportGenerator
 from src.pipeline.predict_pipeline import PredictPipeline
 from src.pipeline.train_pipeline import TrainPipeline
 from src.utils.logger import setup_logger
+from src.utils.time_utils import TimeUtils
 
 
 class DailyRunner:
@@ -23,6 +26,9 @@ class DailyRunner:
         self.config_path = config_path
         self.predict_pipeline = PredictPipeline(config_path)
         self.metrics = MetricsCalculator()
+        self.report_generator = ReportGenerator(
+            report_dir=self.config["output"].get("report_dir", "./reports")
+        )
         self.monitor = ModelMonitor(
             alert_thresholds=self.config["evaluation"].get("alert_thresholds", {"mape": 20, "direction_accuracy": 55})
         )
@@ -65,7 +71,7 @@ class DailyRunner:
 
         y_true = valid["actual_price"].values
         y_pred = valid["predicted_price"].values
-        periods = valid["timestamp"].dt.hour.map(lambda h: 0 if h < 6 else (2 if 8 <= h < 11 or 17 <= h < 21 else 1)).values
+        periods = TimeUtils.classify_period(pd.to_datetime(valid["timestamp"]))
         metrics = self.metrics.compute_all(y_true, y_pred, periods=periods)
 
         record = self.monitor.record(target_date, y_true, y_pred)
@@ -76,6 +82,135 @@ class DailyRunner:
 
         self.monitor.save_history(str(self.history_path))
         return {"metrics": metrics, "record": record, "alerts": alerts, "n_evaluated": len(valid)}
+
+    def evaluate_range(
+        self,
+        start_date: str,
+        end_date: str,
+        model_path: Optional[str] = None,
+    ) -> dict:
+        """
+        对一段时间内的每一天进行预测、评估、独立存储结果并画图，
+        最终汇总所有天的结果计算综合评价指标。
+        """
+        dates = pd.date_range(start=start_date, end=end_date, freq="D").strftime("%Y-%m-%d").tolist()
+        self.logger.info(f"开始批量预测与评估: {start_date} ~ {end_date}, 共 {len(dates)} 天")
+
+        report_dir = Path(self.config["output"].get("report_dir", "./reports"))
+        pred_dir = Path(self.config["output"].get("prediction_dir", "./data/predictions"))
+        report_dir.mkdir(parents=True, exist_ok=True)
+        pred_dir.mkdir(parents=True, exist_ok=True)
+
+        reader = DatasetCSVReader(
+            self.config["data"]["dataset_root"],
+            self.config["data"]["sources"],
+        )
+        target_df = reader.read_target()
+        actual_series = target_df.set_index("timestamp")["value"]
+
+        per_day_results = []
+        all_y_true, all_y_pred, all_timestamps = [], [], []
+
+        for date in dates:
+            self.logger.info(f"处理 {date}")
+            # 1. 预测并保存
+            pred_df = self.predict_pipeline.run(date, model_path=model_path)
+            pred_path = pred_dir / f"{date}_predictions.csv"
+            pred_df.to_csv(pred_path, index=False)
+
+            # 2. 对齐实际值
+            pred_df["actual_price"] = pred_df["timestamp"].map(actual_series)
+            valid = pred_df.dropna(subset=["actual_price"])
+            if valid.empty:
+                self.logger.warning(f"{date} 实际值尚未公布，仅保存预测")
+                per_day_results.append({"date": date, "evaluated": False, "n_samples": len(pred_df)})
+                continue
+
+            y_true = valid["actual_price"].values
+            y_pred = valid["predicted_price"].values
+            timestamps = valid["timestamp"].values
+            periods = TimeUtils.classify_period(pd.to_datetime(timestamps))
+            metrics = self.metrics.compute_all(y_true, y_pred, periods=periods)
+
+            # 3. 独立画图
+            plot_path = report_dir / "daily" / f"{date}.png"
+            self.report_generator.plot_daily(y_true, y_pred, timestamps, str(plot_path), date=date)
+
+            per_day_results.append({
+                "date": date,
+                "evaluated": True,
+                "n_samples": len(valid),
+                "metrics": metrics,
+                "prediction_path": str(pred_path),
+                "plot_path": str(plot_path),
+            })
+
+            all_y_true.append(y_true)
+            all_y_pred.append(y_pred)
+            all_timestamps.append(timestamps)
+
+        # 4. 汇总综合评价指标
+        aggregate = None
+        if all_y_true:
+            y_true_all = np.concatenate(all_y_true)
+            y_pred_all = np.concatenate(all_y_pred)
+            timestamps_all = np.concatenate(all_timestamps)
+            periods_all = TimeUtils.classify_period(pd.to_datetime(timestamps_all))
+            aggregate = self.metrics.compute_all(y_true_all, y_pred_all, periods=periods_all)
+
+            # 汇总图
+            summary_plot_path = report_dir / "daily" / f"summary_{start_date}_{end_date}.png"
+            self.report_generator.plot_daily(
+                y_true_all, y_pred_all, timestamps_all, str(summary_plot_path),
+                date=f"{start_date} ~ {end_date} 汇总"
+            )
+
+        # 5. 保存每日指标 CSV / JSON
+        summary_csv = report_dir / "daily_metrics_summary.csv"
+        summary_json = report_dir / "daily_metrics_summary.json"
+        self._save_daily_summary(per_day_results, summary_csv, summary_json, aggregate)
+
+        return {
+            "dates": dates,
+            "per_day_results": per_day_results,
+            "aggregate_metrics": aggregate,
+            "summary_csv": str(summary_csv),
+            "summary_json": str(summary_json),
+            "n_evaluated": sum(1 for r in per_day_results if r.get("evaluated", False)),
+        }
+
+    @staticmethod
+    def _save_daily_summary(per_day_results: list, csv_path: Path, json_path: Path, aggregate: Optional[dict]) -> None:
+        """将每日指标保存为 CSV 和 JSON，并写入汇总指标。"""
+        rows = []
+        for r in per_day_results:
+            row = {"date": r["date"], "evaluated": r.get("evaluated", False), "n_samples": r.get("n_samples", 0)}
+            if r.get("evaluated") and "metrics" in r:
+                m = r["metrics"]
+                row.update({
+                    "MAE": m["MAE"],
+                    "RMSE": m["RMSE"],
+                    "MAPE": m["MAPE"],
+                    "sMAPE": m["sMAPE"],
+                    "R2": m["R2"],
+                    "direction_accuracy": m["direction_accuracy"],
+                    "spike_capture_rate": m["spike_metrics"]["spike_capture_rate"],
+                    "spike_false_alarm": m["spike_metrics"]["spike_false_alarm"],
+                    "spike_miss_rate": m["spike_metrics"]["spike_miss_rate"],
+                })
+                for period, val in m.get("period_mape", {}).items():
+                    row[f"period_mape_{period}"] = val
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        df.to_csv(csv_path, index=False)
+
+        summary = {
+            "per_day": rows,
+            "aggregate_metrics": aggregate,
+        }
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
 
     def should_retrain(self, recent_features: Optional[np.ndarray] = None,
                        reference_features: Optional[np.ndarray] = None) -> tuple[bool, list[str]]:

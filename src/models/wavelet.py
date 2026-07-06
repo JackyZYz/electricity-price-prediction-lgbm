@@ -51,7 +51,17 @@ class WaveletDecomposer:
         coeffs = [components["low"]]
         for i in range(1, self.level + 1):
             coeffs.append(components[f"high_{i}"])
-        return pywt.iswt(coeffs, self.wavelet)
+
+        # SWT/iswt 要求各分量长度为 2^level 的整数倍
+        orig_len = len(coeffs[0])
+        pad_len = (2 ** self.level) - (orig_len % (2 ** self.level))
+        if pad_len == 2 ** self.level:
+            pad_len = 0
+        if pad_len > 0:
+            coeffs = [np.pad(c, (0, pad_len), mode="edge") for c in coeffs]
+
+        reconstructed = pywt.iswt(coeffs, self.wavelet)
+        return reconstructed[:orig_len]
 
     def pad_to_power_of_two(self, signal: np.ndarray) -> tuple:
         """将信号填充到2的幂次长度"""

@@ -101,8 +101,28 @@ class FeatureBuilder:
                 ) / df["sys_load_pred"]
         if "reserve_pos" in df.columns and "sys_load_pred" in df.columns and _enabled("reserve_margin"):
             constructed["reserve_margin"] = df["reserve_pos"] / df["sys_load_pred"]
+        if "reserve_neg" in df.columns and "sys_load_pred" in df.columns and _enabled("negative_reserve_margin"):
+            constructed["negative_reserve_margin"] = df["reserve_neg"] / df["sys_load_pred"]
+        if all(c in df.columns for c in ["reserve_pos", "reserve_neg", "sys_load_pred"]) and _enabled("total_reserve_margin"):
+            constructed["total_reserve_margin"] = (df["reserve_pos"] + df["reserve_neg"]) / df["sys_load_pred"]
         if "actual_sys_load_lag_1d" in df.columns and "sys_load_pred" in df.columns and _enabled("load_forecast_error"):
             constructed["load_forecast_error"] = df["actual_sys_load_lag_1d"] - df["sys_load_pred"]
+
+        # 尖峰相关特征
+        if all(c in df.columns for c in ["wind_power_pred", "solar_power_pred"]) and _enabled("renewable_volatility"):
+            # 新能源出力波动性：当前时段相比上一时段的变化幅度
+            renewable = df["wind_power_pred"] + df["solar_power_pred"]
+            constructed["renewable_volatility"] = renewable.diff().abs()
+        if "sys_load_pred" in df.columns and _enabled("load_ramp"):
+            # 负荷爬坡率
+            constructed["load_ramp"] = df["sys_load_pred"].diff().abs()
+        if all(c in df.columns for c in ["sys_load_pred", "wind_power_pred", "solar_power_pred"]) and _enabled("net_load_ramp"):
+            # 净负荷爬坡率
+            net_load = df["sys_load_pred"] - df["wind_power_pred"] - df["solar_power_pred"]
+            constructed["net_load_ramp"] = net_load.diff().abs()
+        if "sys_load_pred" in df.columns and _enabled("load_ratio_to_max"):
+            # 负荷率（当前负荷 / 历史最大负荷）
+            constructed["load_ratio_to_max"] = df["sys_load_pred"] / df["sys_load_pred"].rolling(window=672, min_periods=1).max()
         return constructed
 
     def _build_price_lags(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -114,6 +134,8 @@ class FeatureBuilder:
         for w in self.rolling_windows:
             lags[f"user_price_ma_{w}"] = df["target"].shift(1).rolling(window=w, min_periods=1).mean()
             lags[f"user_price_std_{w}"] = df["target"].shift(1).rolling(window=w, min_periods=1).std()
+            lags[f"user_price_max_{w}"] = df["target"].shift(1).rolling(window=w, min_periods=1).max()
+            lags[f"user_price_min_{w}"] = df["target"].shift(1).rolling(window=w, min_periods=1).min()
         return lags
 
     def _build_actual_lags(self, df: pd.DataFrame) -> pd.DataFrame:

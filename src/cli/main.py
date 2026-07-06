@@ -60,6 +60,20 @@ def cmd_evaluate(args):
             print(f"  - {alert}")
 
 
+def cmd_evaluate_range(args):
+    runner = DailyRunner(config_path=args.config)
+    summary = runner.evaluate_range(args.start_date, args.end_date, model_path=args.model)
+    print(f"批量评估完成: {args.start_date} ~ {args.end_date}")
+    print(f"评估天数: {summary['n_evaluated']} / {len(summary['dates'])}")
+    print(f"每日指标 CSV: {summary['summary_csv']}")
+    print(f"每日指标 JSON: {summary['summary_json']}")
+    if summary['aggregate_metrics']:
+        print("\\n综合评价指标:")
+        _print_metrics(summary['aggregate_metrics'])
+    else:
+        print("\\n无实际值可供汇总")
+
+
 def cmd_retrain(args):
     print("开始重训练...")
     pipeline = TrainPipeline(config_path=args.config)
@@ -102,6 +116,12 @@ def main():
     evaluate_parser = subparsers.add_parser("evaluate", help="评估指定日期的预测结果")
     evaluate_parser.add_argument("--date", required=True, help="目标日期，格式 YYYY-MM-DD")
     evaluate_parser.set_defaults(func=cmd_evaluate)
+
+    evaluate_range_parser = subparsers.add_parser("evaluate-range", help="评估一段时间内的每日预测结果并汇总")
+    evaluate_range_parser.add_argument("--start-date", required=True, help="开始日期，格式 YYYY-MM-DD")
+    evaluate_range_parser.add_argument("--end-date", required=True, help="结束日期，格式 YYYY-MM-DD")
+    evaluate_range_parser.add_argument("--model", default=None, help="模型文件路径（可选）")
+    evaluate_range_parser.set_defaults(func=cmd_evaluate_range)
 
     retrain_parser = subparsers.add_parser("retrain", help="手动重训练模型")
     retrain_parser.set_defaults(func=cmd_retrain)

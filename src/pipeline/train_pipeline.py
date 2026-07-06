@@ -134,15 +134,56 @@ class TrainPipeline:
         features["target"] = df["target"].values
         return features
 
-    def time_series_split(self, df: pd.DataFrame, test_days: int = 30):
-        """时序分割"""
+    def time_series_split(self, df: pd.DataFrame, test_days: int = 30, n_splits: int = 1):
+        """时序分割：支持单一切分或多折滚动切分。"""
         points_per_day = 96
         test_size = test_days * points_per_day
         if test_size >= len(df):
             raise ValueError(f"测试集大小 {test_size} 超过总样本数 {len(df)}")
-        train_df = df.iloc[:-test_size].copy()
-        test_df = df.iloc[-test_size:].copy()
-        return train_df, test_df
+        if n_splits == 1:
+            train_df = df.iloc[:-test_size].copy()
+            test_df = df.iloc[-test_size:].copy()
+            return [(train_df, test_df)]
+
+        # 滚动时序切分：从后往前生成多个切分点
+        splits = []
+        for i in range(n_splits):
+            test_start = len(df) - (n_splits - i) * test_size
+            test_end = test_start + test_size
+            train_df = df.iloc[:test_start].copy()
+            test_df = df.iloc[test_start:test_end].copy()
+            if len(train_df) > 0 and len(test_df) > 0:
+                splits.append((train_df, test_df))
+        return splits
+
+    def _cross_validate(self, features: pd.DataFrame, feature_cols: list, model_type: str, model_config: dict):
+        """执行滚动时序交叉验证。"""
+        cv_folds = self.config["model"].get("train", {}).get("cv_folds", 5)
+        test_days = self.config["model"].get("train", {}).get("test_days", 30)
+        if not self.config["model"].get("train", {}).get("cross_validation", False):
+            splits = self.time_series_split(features, test_days, n_splits=1)
+        else:
+            splits = self.time_series_split(features, test_days, n_splits=cv_folds)
+
+        fold_metrics = []
+        fold_models = []
+        for fold_idx, (train_df, test_df) in enumerate(splits):
+            X_train = train_df[feature_cols].values
+            y_train = train_df["target"].values
+            X_test = test_df[feature_cols].values
+            y_test = test_df["target"].values
+
+            model = ModelFactory.create(model_type, model_config)
+            self.logger.info(f"CV fold {fold_idx + 1}/{len(splits)}: train={len(train_df)}, test={len(test_df)}")
+            model.fit(X_train, y_train, X_test, y_test, feature_names=feature_cols)
+            y_pred = model.predict(X_test)
+            periods = test_df["period_type"].values if "period_type" in test_df else None
+            metrics = self.metrics.compute_all(y_test, y_pred, periods=periods)
+            fold_metrics.append(metrics)
+            fold_models.append(model)
+
+        # 返回最后一个 fold 的模型作为主要模型
+        return fold_models[-1], fold_metrics, splits[-1][1]
 
     def _build_model_config(self) -> dict:
         """从全局配置中提取模型相关配置。"""
@@ -157,6 +198,9 @@ class TrainPipeline:
             "arima_params": model_cfg.get("arima_params", {}),
             "early_stopping_rounds": train_cfg.get("early_stopping_rounds", 50),
             "num_boost_round": train_cfg.get("num_boost_round", 2000),
+            "weight_method": model_cfg.get("weight_method", "none"),
+            "weight_spike_sigma": model_cfg.get("weight_spike_sigma", 2.0),
+            "weight_high_price_percentile": model_cfg.get("weight_high_price_percentile", 80.0),
         }
 
     def train(self, df: pd.DataFrame, save_report: bool = True) -> dict:
@@ -175,22 +219,14 @@ class TrainPipeline:
         )
         self.logger.info(f"特征矩阵已保存至 feature store, version={version}")
 
-        test_days = self.config["model"].get("train", {}).get("test_days", 30)
-        train_df, test_df = self.time_series_split(features, test_days)
-
-        X_train = train_df[feature_cols].values
-        y_train = train_df["target"].values
-        X_test = test_df[feature_cols].values
-        y_test = test_df["target"].values
-
         model_type = self.config["model"].get("type", "lgbm")
         model_config = self._build_model_config()
-        model = ModelFactory.create(model_type, model_config)
 
         self.logger.info(f"开始训练模型: {model_type}")
-        fit_result = model.fit(X_train, y_train, X_test, y_test, feature_names=feature_cols)
+        model, fold_metrics, test_df = self._cross_validate(features, feature_cols, model_type, model_config)
 
-        y_pred = model.predict(X_test)
+        y_test = test_df["target"].values
+        y_pred = model.predict(test_df[feature_cols].values)
         periods = test_df["period_type"].values if "period_type" in test_df else None
         metrics = self.metrics.compute_all(y_test, y_pred, periods=periods)
 
@@ -222,8 +258,8 @@ class TrainPipeline:
             "model_type": model_type,
             "model_path": str(model_path),
             "feature_cols": feature_cols,
-            "fit_result": fit_result,
             "metrics": metrics,
+            "fold_metrics": fold_metrics,
             "importance": importance,
             "y_test": y_test,
             "y_pred": y_pred,
