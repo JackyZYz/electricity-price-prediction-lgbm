@@ -54,9 +54,9 @@ class DataValidator:
         return {"missing_periods": missing, "expected_periods": len(full_range)}
 
     def check_duplicate_dates(self, df: pd.DataFrame) -> int:
-        """检查日期重复（按日期维度）"""
-        dates = pd.to_datetime(df["timestamp"]).dt.date
-        return int(dates.duplicated().sum())
+        """检查重复时间戳数量（长表格式下，同一时刻应唯一）。"""
+        ts = pd.to_datetime(df["timestamp"])
+        return int(ts.duplicated().sum())
 
     def check_alignment(self, df_target: pd.DataFrame, df_feature: pd.DataFrame) -> dict:
         """检查特征表与目标表的时间戳对齐情况"""

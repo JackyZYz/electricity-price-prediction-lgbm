@@ -59,11 +59,13 @@ class DataAdapter:
         """以目标变量存在的时间戳为基准，丢弃目标缺失的样本"""
         return df[df[target_col].notna()].copy()
 
-    def build_panel(self, tables: Dict[str, pd.DataFrame], target_df: pd.DataFrame, **kwargs) -> pd.DataFrame:
-        """完整适配流程：合并 → 缺失处理 → 对齐目标"""
+    def build_panel(self, tables: Dict[str, pd.DataFrame], target_df: pd.DataFrame,
+                    align_to_target: bool = True, **kwargs) -> pd.DataFrame:
+        """完整适配流程：合并 → 缺失处理 → （可选）对齐目标"""
         solar_wind_cols = kwargs.get("solar_wind_cols", ["wind_power_pred", "solar_power_pred"])
         missing_strategy = kwargs.get("missing_strategy", "ffill")
         df = self.merge_tables(tables, target_df)
         df = self.handle_missing(df, strategy=missing_strategy, solar_wind_cols=solar_wind_cols)
-        df = self.align_to_target(df)
+        if align_to_target:
+            df = self.align_to_target(df)
         return df

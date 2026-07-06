@@ -55,18 +55,18 @@ class DatasetCSVReader(BaseDataReader):
             raise FileNotFoundError(f"数据文件不存在: {path}")
 
         df = pd.read_csv(path, parse_dates=["日期"])
-        time_cols = [c for c in df.columns if c not in self.META_COLS]
 
-        # 00:00 缺失用 24:00 回填（约定）
-        if fill_00_with_24 and "00:00" in df.columns and "24:00" in df.columns:
-            df["00:00"] = df["00:00"].fillna(df["24:00"])
+        # 去重：同一日期可能出现多行，保留最后一行
+        df = df.drop_duplicates(subset=["日期"], keep="last")
+
+        time_cols = [c for c in df.columns if c not in self.META_COLS]
 
         # melt 成长表
         df_long = df.melt(
             id_vars=["日期"], value_vars=time_cols,
             var_name="time_str", value_name="value",
         )
-        # 处理 24:00 为次日 00:00
+        # 处理 24:00 为次日 00:00；同天 00:00 保留原值（若缺失，由前日 24:00 回填）
         df_long["base_date"] = df_long["日期"].dt.strftime("%Y-%m-%d")
         next_day_mask = df_long["time_str"] == "24:00"
         df_long.loc[next_day_mask, "time_str"] = "00:00"
@@ -76,6 +76,11 @@ class DatasetCSVReader(BaseDataReader):
         df_long["timestamp"] = pd.to_datetime(df_long["base_date"] + " " + df_long["time_str"])
         df_long = df_long[["timestamp", "value"]].sort_values("timestamp").reset_index(drop=True)
         df_long["field_name"] = table_name
+
+        # 去重：同一时刻若存在多条记录（前日 24:00 映射 + 当日 00:00），保留非空值
+        df_long = df_long.sort_values("value", na_position="last")
+        df_long = df_long.drop_duplicates(subset=["timestamp"], keep="last")
+        df_long = df_long.sort_values("timestamp").reset_index(drop=True)
 
         if start_date is not None:
             df_long = df_long[df_long["timestamp"] >= pd.to_datetime(start_date)]
@@ -112,7 +117,9 @@ class MockDataReader(BaseDataReader):
         if start_date:
             df = df[df["timestamp"] >= pd.to_datetime(start_date)]
         if end_date:
-            df = df[df["timestamp"] <= pd.to_datetime(end_date)]
+            # end_date 包含整天
+            end_bound = pd.to_datetime(end_date) + pd.Timedelta(days=1)
+            df = df[df["timestamp"] < end_bound]
         return df
 
     def list_available_tables(self) -> list:

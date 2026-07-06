@@ -35,12 +35,13 @@ preprocessing:
   missing_strategy: "ffill"      # ffill | linear | mean
   outlier_method: "iqr"         # iqr | zscore | none
   outlier_threshold: 3.0        # IQR倍数 或 Z-score阈值
-  normalize_method: "standard"  # standard | minmax | none
-  fill_00_with_24: true         # 是否用 24:00 回填 00:00
+  normalize_method: "none"      # standard | minmax | none
+  fill_00_with_24: true         # 是否将前日 24:00 映射到次日 00:00
   solar_wind_night_fill: 0.0    # 风光夜间空值填充值
 
 # --- 特征配置 ---
 features:
+  config_path: "config/features.yaml"
   lag_windows: [1, 7]           # 滞后天数
   rolling_windows: [96, 672]    # 滚动统计窗口（点数，15min粒度：96=1天，672=7天）
   use_price_lags: true
@@ -49,7 +50,9 @@ features:
 
 # --- 模型配置 ---
 model:
-  wavelet: "db4"
+  # 主模型类型：wtlgbm | lgbm | xgb | arima
+  # WT-LGBM 已修复 SWT 重构问题，当前默认使用 wtlgbm
+  type: "wtlgbm"
   decompose_level: 2
   window_size: 30               # 历史窗口（天）
 
@@ -75,9 +78,9 @@ model:
 
 # --- 超参数优化配置 ---
 optuna:
-  enabled: true
-  n_trials: 100
-  cv_folds: 5
+  enabled: false
+  n_trials: 50
+  cv_folds: 3
 
 # --- 评估配置 ---
 evaluation:
@@ -91,6 +94,7 @@ output:
   prediction_dir: "./data/predictions/"
   report_dir: "./reports/"
   model_dir: "./models/"
+  feature_store_dir: "./data/features/"
   log_dir: "./logs/"
   log_level: "INFO"
   output_methods:
