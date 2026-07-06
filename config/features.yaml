@@ -95,11 +95,47 @@ features:
     formula: "reserve_pos / sys_load_pred"
     description: "备用裕度"
 
+  - name: negative_reserve_margin
+    category: constructed
+    status: OK
+    formula: "reserve_neg / sys_load_pred"
+    description: "负备用裕度"
+
+  - name: total_reserve_margin
+    category: constructed
+    status: OK
+    formula: "(reserve_pos + reserve_neg) / sys_load_pred"
+    description: "总备用裕度"
+
   - name: renewable_penetration
     category: constructed
     status: OK
     formula: "(wind_power_pred + solar_power_pred) / sys_load_pred"
     description: "新能源渗透率"
+
+  - name: renewable_volatility
+    category: constructed
+    status: OK
+    formula: "abs(diff(wind_power_pred + solar_power_pred))"
+    description: "新能源出力波动率"
+
+  - name: load_ramp
+    category: constructed
+    status: OK
+    formula: "abs(diff(sys_load_pred))"
+    description: "负荷爬坡率"
+
+  - name: net_load_ramp
+    category: constructed
+    status: OK
+    formula: "abs(diff(sys_load_pred - wind_power_pred - solar_power_pred))"
+    description: "净负荷爬坡率"
+
+  - name: load_ratio_to_max
+    category: constructed
+    status: OK
+    formula: "sys_load_pred / rolling_max(sys_load_pred, 672)"
+    description: "负荷率（当前负荷 / 历史最大负荷）"
 
   - name: thermal_ratio
     category: constructed

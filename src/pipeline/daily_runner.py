@@ -162,7 +162,7 @@ class DailyRunner:
             summary_plot_path = report_dir / "daily" / f"summary_{start_date}_{end_date}.png"
             self.report_generator.plot_daily(
                 y_true_all, y_pred_all, timestamps_all, str(summary_plot_path),
-                date=f"{start_date} ~ {end_date} 汇总"
+                date=f"{start_date} ~ {end_date} summary"
             )
 
         # 5. 保存每日指标 CSV / JSON
