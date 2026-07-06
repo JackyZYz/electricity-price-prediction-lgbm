@@ -1,0 +1,192 @@
+features:
+  # ---- 直接特征（从事前表直接取值） ----
+  - name: sys_load_pred
+    category: direct
+    status: OK
+    source_table: "短期系统负荷预测信息_出清发布电力"
+    dtype: float
+    description: "系统负荷预测值"
+
+  - name: wind_power_pred
+    category: direct
+    status: OK
+    source_table: "统调风电功率预测_风力_地区汇总_出清发布电力"
+    dtype: float
+    description: "统调风电功率预测（地区汇总）"
+
+  - name: solar_power_pred
+    category: direct
+    status: OK
+    source_table: "统调光电功率预测_太阳能_地区汇总_出清发布电力"
+    dtype: float
+    description: "统调光电功率预测（地区汇总）"
+
+  - name: power_import_plan
+    category: direct
+    status: OK
+    source_table: "受电计划_华东_出清发布电力"
+    dtype: float
+    description: "省外受电计划"
+
+  - name: coal_gen_plan
+    category: direct
+    status: OK
+    source_table: "煤电发电计划_地区汇总_终发布电力"
+    dtype: float
+    description: "煤电发电计划"
+
+  - name: gas_gen_plan
+    category: direct
+    status: OK
+    source_table: "燃机固定出力总值_地区汇总_出清发布电力"
+    dtype: float
+    description: "燃机固定出力总值"
+
+  - name: storage_plan
+    category: direct
+    status: OK
+    source_table: "储能发电计划_地区汇总_终发布电力"
+    dtype: float
+    description: "储能发电计划"
+
+  - name: reserve_pos
+    category: direct
+    status: OK
+    source_table: "正负备用空间_正备用"
+    dtype: float
+    description: "正备用空间"
+
+  - name: reserve_neg
+    category: direct
+    status: OK
+    source_table: "正负备用空间_负备用"
+    dtype: float
+    description: "负备用空间"
+
+  - name: renewable_capacity
+    category: direct
+    status: OK
+    source_table: "分省可再生能源发电能力预测_发电能力"
+    dtype: float
+    description: "分省可再生能源发电能力预测"
+
+  # ---- 构造特征 ----
+  - name: bidding_space
+    category: constructed
+    status: OK
+    formula: "(sys_load_pred + power_import_plan) - (coal_gen_plan + gas_gen_plan + storage_plan + wind_power_pred + solar_power_pred)"
+    description: "竞价空间"
+
+  - name: net_load
+    category: constructed
+    status: OK
+    formula: "sys_load_pred - (wind_power_pred + solar_power_pred)"
+    description: "净负荷"
+
+  - name: import_ratio
+    category: constructed
+    status: OK
+    formula: "power_import_plan / sys_load_pred"
+    description: "外来电占比"
+
+  - name: reserve_margin
+    category: constructed
+    status: OK
+    formula: "reserve_pos / sys_load_pred"
+    description: "备用裕度"
+
+  - name: renewable_penetration
+    category: constructed
+    status: OK
+    formula: "(wind_power_pred + solar_power_pred) / sys_load_pred"
+    description: "新能源渗透率"
+
+  - name: thermal_ratio
+    category: constructed
+    status: OK
+    formula: "(coal_gen_plan + gas_gen_plan) / sys_load_pred"
+    description: "火电占比"
+
+  - name: load_forecast_error
+    category: constructed
+    status: OK
+    formula: "actual_sys_load_lag_1d - sys_load_pred"
+    description: "日前/实际负荷偏差"
+
+  # ---- 滞后特征 ----
+  - name: user_price_lag_1d
+    category: lag
+    status: OK
+    description: "昨日同时段用户侧电价"
+
+  - name: user_price_lag_7d
+    category: lag
+    status: OK
+    description: "上周同日同时段用户侧电价"
+
+  - name: user_price_ma_1d
+    category: lag
+    status: OK
+    description: "过去1天用户侧均价"
+
+  - name: user_price_std_1d
+    category: lag
+    status: OK
+    description: "过去1天用户侧电价波动率"
+
+  - name: actual_load_lag_1d
+    category: lag
+    status: OK
+    source_table: "实际系统负荷_实际发布电力"
+    description: "昨日同时段实际负荷"
+
+  - name: actual_wind_solar_lag_1d
+    category: lag
+    status: OK
+    source_table: "实际统调风光情况"
+    description: "昨日同时段实际风光出力"
+
+  # ---- 日期特征 ----
+  - name: hour
+    category: date
+    status: OK
+
+  - name: minute
+    category: date
+    status: OK
+
+  - name: weekday
+    category: date
+    status: OK
+
+  - name: month
+    category: date
+    status: OK
+
+  - name: is_weekend
+    category: date
+    status: OK
+
+  - name: is_holiday
+    category: date
+    status: OK
+
+  - name: is_peak
+    category: date
+    status: OK
+
+  - name: day_of_year
+    category: date
+    status: OK
+
+  - name: hour_sin
+    category: date
+    status: OK
+
+  - name: hour_cos
+    category: date
+    status: OK
+
+  - name: period_type
+    category: date
+    status: OK

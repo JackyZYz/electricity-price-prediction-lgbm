@@ -1,0 +1,107 @@
+# ============================================================
+# 用户侧日前出清电价预测 - 主配置文件
+# ============================================================
+
+# --- 数据配置 ---
+data:
+  # 数据时间粒度: "15min" (96点/天) 或 "1h" (24点/天)
+  granularity: "15min"
+  # 数据读取器类型: "dataset_csv" | "mock" | "database" | "api"
+  reader_type: "dataset_csv"
+  # 数据源（reader_type=dataset_csv 时生效）
+  dataset_root: "./Dataset"
+  sources:
+    # 目标变量
+    target_price: "用户侧日前出清发布/用户侧日前出清发布_统一结算点电价最终结果.csv"
+    # 事前预测/计划类特征
+    sys_load_pred: "短期系统负荷预测/短期系统负荷预测信息_出清发布电力.csv"
+    wind_power_pred: "统调风电功率预测/统调风电功率预测_风力_地区汇总_出清发布电力.csv"
+    solar_power_pred: "统调光电功率预测/统调光电功率预测_太阳能_地区汇总_出清发布电力.csv"
+    power_import_plan: "受电计划/受电计划_华东_出清发布电力.csv"
+    coal_gen_plan: "煤电发电计划/煤电发电计划_地区汇总_终发布电力.csv"
+    gas_gen_plan: "燃机固定出力总值/燃机固定出力总值_地区汇总_出清发布电力.csv"
+    storage_plan: "储能发电计划/储能发电计划_地区汇总_终发布电力.csv"
+    reserve_pos: "正负备用空间/正负备用空间_正备用.csv"
+    reserve_neg: "正负备用空间/正负备用空间_负备用.csv"
+    # 事后实际类（用于滞后特征）
+    actual_sys_load: "实际系统负荷/实际系统负荷_实际发布电力.csv"
+    actual_wind: "实际统调风光情况/实际统调风光情况_风力_地区汇总_实际发布电力.csv"
+    actual_solar: "实际统调风光情况/实际统调风光情况_光伏_地区汇总_实际发布电力.csv"
+    # 辅助
+    renewable_capacity: "分省可再生能源发电能力预测_发电能力.csv"
+
+# --- 预处理配置 ---
+preprocessing:
+  missing_strategy: "ffill"      # ffill | linear | mean
+  outlier_method: "iqr"         # iqr | zscore | none
+  outlier_threshold: 3.0        # IQR倍数 或 Z-score阈值
+  normalize_method: "standard"  # standard | minmax | none
+  fill_00_with_24: true         # 是否用 24:00 回填 00:00
+  solar_wind_night_fill: 0.0    # 风光夜间空值填充值
+
+# --- 特征配置 ---
+features:
+  lag_windows: [1, 7]           # 滞后天数
+  rolling_windows: [96, 672]    # 滚动统计窗口（点数，15min粒度：96=1天，672=7天）
+  use_price_lags: true
+  use_actual_lags: true
+  use_date_features: true
+
+# --- 模型配置 ---
+model:
+  wavelet: "db4"
+  decompose_level: 2
+  window_size: 30               # 历史窗口（天）
+
+  train:
+    test_days: 30
+    early_stopping_rounds: 50
+    num_boost_round: 5000
+    cross_validation: true
+    cv_folds: 5
+
+  predict:
+    horizon: 96                 # 15min粒度为96点
+
+  lgbm_params:
+    learning_rate: 0.05
+    num_leaves: 63
+    max_depth: 12
+    min_data_in_leaf: 20
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    lambda_l1: 0.01
+    lambda_l2: 0.01
+
+# --- 超参数优化配置 ---
+optuna:
+  enabled: true
+  n_trials: 100
+  cv_folds: 5
+
+# --- 评估配置 ---
+evaluation:
+  spike_threshold_sigma: 2.0
+  alert_thresholds:
+    mape: 20
+    direction_accuracy: 55
+
+# --- 输出配置 ---
+output:
+  prediction_dir: "./data/predictions/"
+  report_dir: "./reports/"
+  model_dir: "./models/"
+  log_dir: "./logs/"
+  log_level: "INFO"
+  output_methods:
+    - "csv"
+
+# --- 调度配置 ---
+schedule:
+  run_time: "08:00"
+  auto_trigger: false
+
+# --- 节假日配置 ---
+calendar:
+  use_chinese_calendar: true
+  custom_holidays: []

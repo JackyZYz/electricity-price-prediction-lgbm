@@ -1,31 +1,33 @@
+# 数据/模型/报告/日志（运行时生成）
+data/processed/*
+data/features/*
+data/predictions/*
+models/*
+reports/*
+logs/*
+
+# 原型运行时生成文件
+prototype/anaconda_projects/
+prototype/prototype_output/
+prototype/prototype_results.png
+
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
-.venv/
-venv/
-
-# Jupyter
+.pytest_cache/
+.mypy_cache/
 .ipynb_checkpoints/
-*.ipynb_checkpoints
 
-# Data & Outputs
-data/
-prototype_output/
-logs/
-models/
+# 环境
+.env
+venv/
+.venv/
 
 # IDE
-.idea/
 .vscode/
-*.swp
-*.swo
+.idea/
 
-# OS
+# 系统文件
 .DS_Store
 Thumbs.db
-*.png
-*.jpg
-anaconda_projects/
