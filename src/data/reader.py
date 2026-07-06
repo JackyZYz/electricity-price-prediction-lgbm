@@ -68,9 +68,10 @@ class DatasetCSVReader(BaseDataReader):
         )
         # 处理 24:00 为次日 00:00
         df_long["base_date"] = df_long["日期"].dt.strftime("%Y-%m-%d")
-        df_long.loc[df_long["time_str"] == "24:00", "time_str"] = "00:00"
-        df_long.loc[df_long["time_str"] == "00:00", "base_date"] = (
-            pd.to_datetime(df_long.loc[df_long["time_str"] == "00:00", "base_date"]) + pd.Timedelta(days=1)
+        next_day_mask = df_long["time_str"] == "24:00"
+        df_long.loc[next_day_mask, "time_str"] = "00:00"
+        df_long.loc[next_day_mask, "base_date"] = (
+            pd.to_datetime(df_long.loc[next_day_mask, "base_date"]) + pd.Timedelta(days=1)
         ).dt.strftime("%Y-%m-%d")
         df_long["timestamp"] = pd.to_datetime(df_long["base_date"] + " " + df_long["time_str"])
         df_long = df_long[["timestamp", "value"]].sort_values("timestamp").reset_index(drop=True)
